@@ -54,7 +54,7 @@ def get_unlinked_livephoto_ids(db_config: dict, user_config: dict) -> pd.DataFra
             # 0. Get user name
             cur.execute(
                 """
-                SELECT id FROM users WHERE name = %s
+                SELECT id FROM user WHERE name = %s
                 """,
                 (user_config["name"],),
             )
@@ -67,7 +67,7 @@ def get_unlinked_livephoto_ids(db_config: dict, user_config: dict) -> pd.DataFra
             cur.execute(
                 r"""
                 SELECT id, "originalFileName", "fileCreatedAt"
-                FROM assets 
+                FROM asset 
                 WHERE "ownerId" = %s
                 AND lower("originalFileName") ~ '\.(mov|mp4)$';
                 """,
@@ -94,7 +94,7 @@ def get_unlinked_livephoto_ids(db_config: dict, user_config: dict) -> pd.DataFra
             cur.execute(
                 r"""
                 SELECT id, "originalFileName", "fileCreatedAt"
-                FROM assets
+                FROM asset
                 WHERE "ownerId" = %s
                 AND "livePhotoVideoId" IS NULL
                 AND lower("originalFileName") !~ '\.(mov|mp4)$'
@@ -138,7 +138,7 @@ def get_unlinked_livephoto_ids(db_config: dict, user_config: dict) -> pd.DataFra
                         "originalFileName",
                         "ownerId",
                         regexp_replace("originalFileName", '\..*$', '') AS base_filename
-                    FROM assets
+                    FROM asset
                     WHERE "ownerId" = %s
                     AND lower("originalFileName") !~ '\.(mov|mp4)$'  -- exclude video files
                 )
