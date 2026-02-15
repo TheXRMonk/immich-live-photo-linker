@@ -25,7 +25,6 @@ import os
 from datetime import datetime
 from utils import get_confirmation, load_config, parse_link_args
 
-
 def get_unlinked_livephoto_ids(db_config: dict, user_config: dict) -> pd.DataFrame:
     """Identify unlinked Live Photo assets in Immich database.
 

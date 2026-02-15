@@ -1,5 +1,6 @@
 """Utility functions for the Immich Live Photo Linker/Unlinker scripts."""
 
+import os
 import requests
 import argparse
 import yaml
@@ -19,72 +20,34 @@ def get_confirmation(prompt: str) -> bool:
 
 def validate_config(config: dict):
     """Validate configuration with server connectivity check."""
+    required = {
+        "api": ["api-key", "url"],
+        "database": ["host", "dbname", "user", "password", "port"],
+        "user-info": ["name"]
+    }
 
-    # Check if all three required sections exist
-    required_sections = {"api", "database", "user-info"}
-    if missing_sections := required_sections - set(config.keys()):
-        raise KeyError(
-            f"Configuration must contain {', '.join(required_sections)} sections. Missing: {', '.join(missing_sections)}"
-        )
+    for section, keys in required.items():
+        if section not in config:
+            raise KeyError(f"Missing section: {section}")
+        for key in keys:
+            if not config[section].get(key):
+                raise KeyError(f"Missing required config: {section}.{key}")
 
-    api_config = config["api"]
-    db_config = config["database"]
-    user_config = config["user-info"]
-
-    # Required configuration keys
-    required_api_keys = {"api-key", "url"}
-    required_db_keys = {"host", "dbname", "user", "password", "port"}
-    required_user_keys = {"name"}
-
-    # Validate API configuration
-    if missing := required_api_keys - set(api_config.keys()):
-        raise KeyError(f"Missing required API configuration keys: {', '.join(missing)}")
-
-    # Validate database configuration
-    if missing := required_db_keys - set(db_config.keys()):
-        raise KeyError(
-            f"Missing required database configuration keys: {', '.join(missing)}"
-        )
-
-    # Validate user_info configuration
-    if missing := required_user_keys - set(user_config.keys()):
-        raise KeyError(
-            f"Missing required user_info configuration keys: {', '.join(missing)}"
-        )
-
-    # Server connectivity check
+    # Connectivity Check
     try:
-        response = requests.get(
-            f"{api_config['url']}/api/server/ping",
-            headers={
-                "Accept": "application/json",
-            },
-            timeout=10,  # Prevent hanging
+        url = config['api']['url'].rstrip('/')
+        ping = requests.get(f"{url}/api/server/ping", timeout=5)
+        ping.raise_for_status()
+        
+        auth = requests.get(
+            f"{url}/api/users/me",
+            headers={"x-api-key": config['api']['api-key']},
+            timeout=5
         )
-
-        if response.status_code != 200:
-            raise ConnectionError(f"Server returned {response.status_code}")
-
-    except requests.exceptions.RequestException as e:
-        raise ConnectionError(f"Server connection failed: {str(e)}")
-
-    # API key check
-    response = requests.get(
-        f"{api_config['url']}/api/users/me",
-        headers={
-            "Accept": "application/json",
-            "x-api-key": api_config["api-key"],
-        },
-        timeout=10,  # Prevent hanging
-    )
-
-    if response.status_code != 200:
-        error_msg = response.json()
-        raise ConnectionError(
-            f"API key validation failure: {error_msg['error']} - {error_msg['message']}"
-        )
-
-    return
+        if auth.status_code != 200:
+            raise ConnectionError("API Key invalid or insufficient permissions.")
+    except Exception as e:
+        raise ConnectionError(f"Immich Connectivity Error: {e}")
 
 
 def parse_link_args() -> argparse.Namespace:
@@ -148,28 +111,27 @@ def parse_unlink_args() -> argparse.Namespace:
 
 
 def load_config(config_path: str) -> dict:
-    """Load and validate configuration from YAML file.
+    """Loads config prioritizing Env Vars, then YAML file, then Defaults."""
+    config = {"api": {}, "database": {}, "user-info": {}}
 
-    Args:
-        config_path: Path to YAML configuration file
+    # 1. Try loading from file if it exists
+    if Path(config_path).is_file():
+        with open(config_path, "r") as f:
+            file_data = yaml.safe_load(f)
+            if file_data:
+                config.update(file_data)
 
-    Returns:
-        Dictionary containing validated API and database configurations
+    # 2. Overwrite/Fill with Environment Variables & Defaults
+    config["user-info"]["name"] = os.getenv("IMMICH_USERNAME", config["user-info"].get("name"))
+    
+    config["api"]["api-key"] = os.getenv("IMMICH_API_KEY", config["api"].get("api-key"))
+    config["api"]["url"] = os.getenv("IMMICH_URL", config["api"].get("url"))
 
-    Raises:
-        FileNotFoundError: If config file doesn't exist
-        KeyError: If required configuration keys are missing
-        yaml.YAMLError: If config file is not valid YAML
-    """
-    # Check if config file exists
-    if not Path(config_path).is_file():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    config["database"]["host"] = os.getenv("DB_HOST", config["database"].get("host", "immich_postgres"))
+    config["database"]["dbname"] = os.getenv("DB_NAME", config["database"].get("dbname", "immich"))
+    config["database"]["user"] = os.getenv("DB_USER", config["database"].get("user", "postgres"))
+    config["database"]["password"] = os.getenv("DB_PASSWORD", config["database"].get("password"))
+    config["database"]["port"] = os.getenv("DB_PORT", config["database"].get("port", "5432"))
 
-    # Load and parse config file
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    # Validate config structure
     validate_config(config)
-
     return config
