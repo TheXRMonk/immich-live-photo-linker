@@ -22,8 +22,6 @@ def validate_config(config: dict):
     """Validate configuration with server connectivity check."""
     required = {
         "api": ["api-key", "url"],
-        "database": ["host", "dbname", "user", "password", "port"],
-        "user-info": ["name"]
     }
 
     for section, keys in required.items():
@@ -35,19 +33,76 @@ def validate_config(config: dict):
 
     # Connectivity Check
     try:
-        url = config['api']['url'].rstrip('/')
+        url = config["api"]["url"].rstrip("/")
         ping = requests.get(f"{url}/api/server/ping", timeout=5)
         ping.raise_for_status()
-        
+
         auth = requests.get(
             f"{url}/api/users/me",
-            headers={"x-api-key": config['api']['api-key']},
-            timeout=5
+            headers={"x-api-key": config["api"]["api-key"]},
+            timeout=5,
         )
         if auth.status_code != 200:
             raise ConnectionError("API Key invalid or insufficient permissions.")
-    except Exception as e:
+    except requests.exceptions.ConnectionError as e:
         raise ConnectionError(f"Immich Connectivity Error: {e}")
+
+
+def get_api_headers(api_config: dict, content_type: bool = False) -> dict:
+    """Build standard API headers for Immich requests.
+
+    Args:
+        api_config: Dictionary containing API endpoint and credentials.
+        content_type: Whether to include Content-Type header for JSON payloads.
+
+    Returns:
+        Dictionary of HTTP headers.
+    """
+    headers = {
+        "Accept": "application/json",
+        "x-api-key": api_config["api-key"],
+    }
+    if content_type:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+def search_assets(api_config: dict, search_params: dict) -> list[dict]:
+    """Fetch all assets matching search criteria using paginated metadata search.
+
+    Uses POST /api/search/metadata with automatic pagination.
+
+    Args:
+        api_config: Dictionary containing Immich API endpoint and credentials.
+        search_params: Dictionary of MetadataSearchDto parameters.
+
+    Returns:
+        List of AssetResponseDto dictionaries.
+    """
+    url = f"{api_config['url']}/api/search/metadata"
+    headers = get_api_headers(api_config, content_type=True)
+
+    all_assets = []
+    page = 1
+    page_size = 1000
+
+    while True:
+        params = {**search_params, "page": page, "size": page_size}
+        response = requests.post(url, headers=headers, json=params)
+        response.raise_for_status()
+
+        data = response.json()
+        assets_data = data.get("assets", {})
+        items = assets_data.get("items", [])
+        all_assets.extend(items)
+
+        next_page = assets_data.get("nextPage")
+        if not next_page or len(items) < page_size:
+            break
+
+        page += 1
+
+    return all_assets
 
 
 def parse_link_args() -> argparse.Namespace:
@@ -68,7 +123,9 @@ def parse_link_args() -> argparse.Namespace:
         help="Perform a dry run without making changes",
     )
     parser.add_argument(
-        "--test-run", action="store_true", help="Process only one asset as a test"
+        "--test-run",
+        action="store_true",
+        help="Process only one asset as a test",
     )
     parser.add_argument(
         "--config",
@@ -112,7 +169,7 @@ def parse_unlink_args() -> argparse.Namespace:
 
 def load_config(config_path: str) -> dict:
     """Loads config prioritizing Env Vars, then YAML file, then Defaults."""
-    config = {"api": {}, "database": {}, "user-info": {}}
+    config = {"api": {}}
 
     # 1. Try loading from file if it exists
     if Path(config_path).is_file():
@@ -121,17 +178,11 @@ def load_config(config_path: str) -> dict:
             if file_data:
                 config.update(file_data)
 
-    # 2. Overwrite/Fill with Environment Variables & Defaults
-    config["user-info"]["name"] = os.getenv("IMMICH_USERNAME", config["user-info"].get("name"))
-    
-    config["api"]["api-key"] = os.getenv("IMMICH_API_KEY", config["api"].get("api-key"))
+    # 2. Overwrite/Fill with Environment Variables
+    config["api"]["api-key"] = os.getenv(
+        "IMMICH_API_KEY", config["api"].get("api-key")
+    )
     config["api"]["url"] = os.getenv("IMMICH_URL", config["api"].get("url"))
-
-    config["database"]["host"] = os.getenv("DB_HOST", config["database"].get("host", "immich_postgres"))
-    config["database"]["dbname"] = os.getenv("DB_NAME", config["database"].get("dbname", "immich"))
-    config["database"]["user"] = os.getenv("DB_USER", config["database"].get("user", "postgres"))
-    config["database"]["password"] = os.getenv("DB_PASSWORD", config["database"].get("password"))
-    config["database"]["port"] = os.getenv("DB_PORT", config["database"].get("port", "5432"))
 
     validate_config(config)
     return config

@@ -12,40 +12,35 @@ Usage:
 2. Run: python unlink_livephoto_videos.py --linked-csv PATH_TO_CSV [flags]
 
 Safety:
-- Back up your database before running
 - Always test with --dry-run first
 """
 
-import json
 import requests
 import pandas as pd
 from datetime import datetime
-from utils import get_confirmation, load_config, parse_unlink_args
+from utils import get_api_headers, get_confirmation, load_config, parse_unlink_args
 
 
 def unlink_livephoto_assets(linked_assets_df: pd.DataFrame, api_config: dict):
     """Remove Live Photo links through Immich API.
 
+    Uses PUT /api/assets/{id} to clear the livePhotoVideoId field.
+
     Args:
-        linked_assets_df: DataFrame containing previously linked assets
-        api_config: Dictionary containing Immich API endpoint and credentials
+        linked_assets_df: DataFrame containing previously linked assets.
+        api_config: Dictionary containing Immich API endpoint and credentials.
     """
     failed_updates = []
     successful_updates = 0
+    headers = get_api_headers(api_config, content_type=True)
 
     for i, asset in linked_assets_df.iterrows():
         print(f"Unlinking asset: {i + 1}/{linked_assets_df.shape[0]}", end="\r")
 
-        payload = json.dumps({"livePhotoVideoId": None})
-
         url = f"{api_config['url']}/api/assets/{asset['photo_asset_id']}"
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "x-api-key": api_config["api-key"],
-        }
+        payload = {"livePhotoVideoId": None}
 
-        result = requests.request("PUT", url=url, headers=headers, data=payload)
+        result = requests.put(url=url, headers=headers, json=payload)
 
         if result.status_code == 200:
             successful_updates += 1
@@ -74,8 +69,6 @@ def unlink_livephoto_assets(linked_assets_df: pd.DataFrame, api_config: dict):
         raise RuntimeError(
             f"Failed to unlink {len(failed_updates)} files. See {out_failed_file} for details."
         )
-
-    return
 
 
 def unlink_from_csv(csv_path: str, api_config: dict, dry_run: bool = False):
@@ -123,13 +116,11 @@ def unlink_from_csv(csv_path: str, api_config: dict, dry_run: bool = False):
 if __name__ == "__main__":
     # ================================================
     # ⚠️ BEFORE RUNNING: ⚠️
-    # 1. Ensure you have a database backup
-    # 2. Run the script with --dry-run for testing
+    # Run the script with --dry-run for testing
     # ================================================
     args = parse_unlink_args()
     config = load_config(args.config)
 
-    # Only need API config for unlinking
     unlink_from_csv(
         csv_path=args.linked_csv,
         api_config=config["api"],

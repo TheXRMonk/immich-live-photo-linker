@@ -4,12 +4,11 @@ A utility script that uses the Immich API to fix unlinked iOS Live Photos in
 Immich by connecting HEIC/JPEG photos with their corresponding MOV/MP4 video
 components.
 
-> **⚠️ WARNING: ALWAYS BACKUP YOUR IMMICH DATABASE BEFORE RUNNING THESE SCRIPTS**
-
 **Key Features:**
-- Identifies and links unlinked Live Photo/Video pairs
+- Identifies and links unlinked Live Photo/Video pairs using only the Immich API
+- No direct database access required
 - Interactive confirmation prompts
-- Validates database connection, server connection, and credentials
+- Validates server connection and API credentials
 - Creates audit trail CSVs for recovery if needed
 - Dry-run and single-test-run modes
 
@@ -36,7 +35,7 @@ script automates the process for handling thousands of images.
 ## Quick Start
 
 1. Clone repo and install requirements
-2. Configure `config.yaml` with your Immich API key and database settings
+2. Configure `config.yaml` with your Immich API key and URL
 3. Run linking script with safety checks:
    ```bash
    python link_livephoto_videos.py --dry-run     # Test configuration
@@ -47,8 +46,7 @@ script automates the process for handling thousands of images.
 ## Requirements
 
 - Python 3.9+
-- Immich API key
-- Immich Postgres Database access
+- Immich API key ([how to obtain one](https://immich.app/docs/features/command-line-interface#obtain-the-api-key))
 - Script package dependencies (`requirements.txt`)
 
 ## Installation & Configuration
@@ -59,12 +57,13 @@ script automates the process for handling thousands of images.
    pip install -r requirements.txt
    ```
 3. Update `config.yaml` with your settings:
-   - Immich API key and URL
-   - Database credentials
+   - Immich API key
+   - Immich server URL
 
-   To find your Postgres database IP:
+   Alternatively, set environment variables:
    ```bash
-   sudo docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' immich_postgres
+   export IMMICH_API_KEY="your-api-key"
+   export IMMICH_URL="http://your-immich-url:port"
    ```
 
 ## Detailed Usage
@@ -125,7 +124,7 @@ python unlink_livephoto_videos.py --linked-csv "path/to/linked_assets_audit.csv"
 ## Notes
 
 - Designed and tested for iOS Live Photos
+- Uses only the Immich REST API — no direct database access needed
 - The linking script creates a CSV audit file that can be used with the
   unlinking script if needed
-- Both scripts require direct access to your Immich database and API
 - Use `--config` flag to specify a different config file location if needed
